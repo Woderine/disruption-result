@@ -17,13 +17,9 @@ def image_record(image):
     match = FILENAME.fullmatch(image.name)
     if not match:
         raise ValueError(f"Use shot_<number>[_description] filenames: {relative}")
-    legacy = parts[0] in {"cq_test_fast10", "cq_test_slow10"}
     directory = parts[:-1]
-    series_id = "initial-cq/" + "/".join(parts[1:-1]) if legacy else "/".join(directory) or "shared"
-    if legacy:
-        label = "Woderine · " + ("四组全时间轴" if parts[1] == "four_arms_full_time" else " / ".join(parts[1:-1]))
-    else:
-        label = " / ".join(directory) or "共享结果"
+    series_id = "/".join(directory) or "shared"
+    label = " / ".join(directory) or "共享结果"
     title = match[2].lstrip("_").replace("_", " ") if match[2] else "结果图"
     return {
         "path": image.relative_to(ROOT).as_posix(),

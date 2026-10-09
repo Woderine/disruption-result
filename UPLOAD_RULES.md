@@ -31,6 +31,8 @@ results/
       shot_16845_diagnostics.png
 ~~~
 
+当前 Woderine 的图片统一放在 `results/Woderine/four_arms_full_time/`。新增实验请在自己的作者目录下另建实验目录。
+
 作者、实验名和可选子目录用来标明图片来源，不参与炮号匹配。推荐使用英文、数字、下划线或连字符命名目录。双方不需要使用相同的目录名、分组名或图形格式。
 
 例如 Alice 的 prediction、heatmap 与 Bob 的 diagnostics 都属于炮 16845，可以在网页展开同一炮后任意选择左右图片比较。没有相同炮号时，网页显示该来源缺图，不会拿其他炮号凑对。
