@@ -5,7 +5,8 @@ layout: null
 {% assign separator = "" %}
 {% for file in site.static_files %}
   {% if file.path contains '/results/' %}
-    {% if file.extname == '.png' or file.extname == '.jpg' or file.extname == '.jpeg' or file.extname == '.webp' %}
+    {% assign extension = file.extname | downcase %}
+    {% if extension == '.png' or extension == '.jpg' or extension == '.jpeg' or extension == '.webp' %}
       {{ separator }}{{ file.path | remove_first: '/' | jsonify }}
       {% assign separator = "," %}
     {% endif %}
