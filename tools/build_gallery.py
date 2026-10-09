@@ -46,10 +46,14 @@ def build(output=None):
         series[source["id"]] = source
     if not images:
         raise ValueError("No named result images found")
+    shot_groups = json.loads((ROOT / "shot-groups.json").read_text(encoding="utf-8"))
+    if not isinstance(shot_groups, dict) or any(not re.fullmatch(r"[1-9]\d*", shot) or group not in {"fast", "slow"} for shot, group in shot_groups.items()):
+        raise ValueError("Shot groups must map normalized shot numbers to fast or slow")
     data = {
-        "repository": os.environ.get("GITHUB_REPOSITORY", "Woderine/disruption"),
+        "repository": os.environ.get("GITHUB_REPOSITORY", "Woderine/disruption-result"),
         "series": sorted(series.values(), key=lambda s: s["id"]),
         "images": images,
+        "shotGroups": shot_groups,
     }
     (ROOT / "assets").mkdir(exist_ok=True)
     (ROOT / "assets" / "data.js").write_text("window.RESULTS_DATA = " + json.dumps(data, ensure_ascii=False, indent=2) + ";\n", encoding="utf-8")
@@ -65,7 +69,7 @@ def build(output=None):
         if destination == ROOT or destination.is_relative_to(results) or not destination.is_relative_to(ROOT):
             raise ValueError("Output must be a separate directory inside the public repository")
         destination.mkdir(parents=True, exist_ok=True)
-        page_files = ("index.html", "README.md", "BROWSE.md", "UPLOAD_RULES.md")
+        page_files = ("index.html", "README.md", "BROWSE.md", "UPLOAD_RULES.md", "COLLABORATION.md", "shot-groups.json")
         asset_files = ("app.js", "catalog-model.js", "style.css", "data.js")
         for name in page_files:
             shutil.copyfile(ROOT / name, destination / name)

@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <meta name="description" content="按炮号查看和比较破裂研究的共享结果图片。">
-  <title>Disruption · 共享结果</title>
+  <title>Disruption Result · 共享结果</title>
   <link rel="stylesheet" href="assets/style.css">
   <script src="assets/catalog-model.js" defer></script>
   <script src="assets/data.js" defer></script>
@@ -12,7 +12,7 @@
 </head>
 <body>
   <header class="masthead">
-    <a class="brand" href="./">disruption<span> / results</span></a>
+    <a class="brand" href="./">disruption<span>-result</span></a>
     <nav><a id="rules-link" href="UPLOAD_RULES.md" target="_blank" rel="noopener">上传规则 ↗</a><a id="repo-link" href="README.md" target="_blank" rel="noopener">GitHub 仓库 ↗</a></nav>
   </header>
   <main>
@@ -23,16 +23,17 @@
       <div class="stats" id="stats" aria-live="polite"></div>
     </section>
     <section class="controls" aria-label="结果筛选">
+      <label class="field">炮次类别<select id="shot-group"><option value="all">全部炮次</option><option value="fast">快炮</option><option value="slow">慢炮</option><option value="unclassified">未分类</option></select></label>
       <label class="field search">搜索炮号<input id="search" type="search" placeholder="例如 16845" inputmode="numeric"></label>
       <label class="field">查看来源 / 左侧来源<select id="series-a"><option value="all">全部来源</option></select></label>
       <label class="field">右侧对比<select id="series-b"><option value="">关闭比较</option><option value="all">任意来源（按炮号选择）</option></select></label>
     </section>
     <div class="results-heading"><h2>炮次列表</h2><div><span id="result-count" aria-live="polite"></span><button id="collapse-all" type="button">全部收起</button></div></div>
     <div id="gallery" class="gallery"></div>
-    <p id="empty" class="empty" hidden>没有匹配的炮次。请调整炮号或来源筛选。</p>
+    <p id="empty" class="empty" hidden>没有匹配的炮次。请调整炮次类别、炮号或来源筛选。</p>
     <noscript>请启用 JavaScript，或打开 <a href="BROWSE.md">图片索引</a> 查看结果。</noscript>
   </main>
-  <footer><span>disruption / 公开研究结果</span><span>按炮号展开 · 支持同炮多图 · 点击图片放大</span></footer>
+  <footer><span>disruption-result / 公开研究结果</span><span>按炮号展开 · 支持同炮多图 · 点击图片放大</span></footer>
   <dialog id="viewer" aria-labelledby="viewer-title">
     <div class="viewer-bar"><strong id="viewer-title"></strong><div><a id="original" target="_blank" rel="noopener">打开原图 ↗</a><button id="close-viewer" type="button" aria-label="关闭放大图片">关闭 ✕</button></div></div>
     <div class="viewer-scroll"><img id="viewer-image" alt=""></div>

@@ -1,14 +1,14 @@
-# disruption
+# disruption-result
 
-破裂研究的公开共享结果：[浏览网站](https://woderine.github.io/disruption/)。
+破裂研究的公开共享结果：[浏览网站](https://woderine.github.io/disruption-result/)。
 
-首页以炮号列出结果，默认收起。点击炮号后加载图片，可以选择左右来源及该炮的不同图片进行比较；点击图片可放大查看。**唯一匹配索引是炮号**，不要求双方图形格式、布局、分组、指标或模型相同。
+首页以炮号列出结果，默认收起，支持全部、快炮、慢炮和未分类筛选。点击炮号后加载图片，可以选择左右来源及该炮的不同图片进行比较；点击图片可放大查看。**唯一匹配索引是炮号**，不要求双方图形格式、布局、分组、指标或模型相同。
 
 当前 Woderine 图集位于 `results/Woderine/four_arms_full_time/`，保留 20 个测试炮次的四组全时间轴图；三组对照图已从公开仓库移除。这些选定炮次的可视化不代表全量测试集的统计结论。
 
 ## 上传与协作
 
-阅读 [上传规则](UPLOAD_RULES.md)。推荐：
+阅读 [上传规则](UPLOAD_RULES.md) 与 [协作入门：版本、审核与 PR](COLLABORATION.md)。推荐：
 
 ~~~
 results/<author>/<experiment>/shot_<number>_<description>.png
@@ -16,7 +16,7 @@ results/<author>/<experiment>/shot_<number>_<description>.png
 
 说明后缀可选，同一炮支持多张 PNG、JPG、JPEG、WebP。图片按文件名中的炮号归到同一条记录；作者和实验目录仅表示来源。
 
-仓库所有者可在 Settings → Collaborators 邀请合作者。有写权限的成员可直接上传，其他贡献者可提交 Pull Request。main 分支更新后，GitHub Pages 通过 Jekyll 自动收集图片路径并发布网页。
+仓库所有者可在 Settings → Collaborators 邀请合作者。推荐合作者上传到自己的分支，发起 Pull Request，经你检查后合并到 main；目前尚未启用强制审批。其他贡献者可通过 Fork 提交 Pull Request。main 分支更新后，GitHub Pages 通过 Jekyll 自动收集图片路径并发布网页。
 
 ## 本地预览
 

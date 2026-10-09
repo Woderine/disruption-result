@@ -1,5 +1,5 @@
 window.RESULTS_DATA = {
-  "repository": "Woderine/disruption",
+  "repository": "Woderine/disruption-result",
   "series": [
     {
       "id": "Woderine/four_arms_full_time",
@@ -127,5 +127,27 @@ window.RESULTS_DATA = {
       "series": "Woderine/four_arms_full_time",
       "title": "结果图"
     }
-  ]
+  ],
+  "shotGroups": {
+    "16400": "slow",
+    "16484": "slow",
+    "16485": "slow",
+    "16489": "slow",
+    "16491": "slow",
+    "16845": "fast",
+    "16882": "slow",
+    "16909": "fast",
+    "16912": "slow",
+    "17285": "fast",
+    "17302": "slow",
+    "17303": "slow",
+    "17304": "slow",
+    "17332": "fast",
+    "17824": "fast",
+    "17825": "fast",
+    "17835": "fast",
+    "17859": "fast",
+    "18107": "fast",
+    "18109": "fast"
+  }
 };

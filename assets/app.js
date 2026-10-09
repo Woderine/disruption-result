@@ -1,6 +1,7 @@
 (async () => {
   'use strict';
   let data = window.RESULTS_DATA;
+  let shotGroups = data?.shotGroups || {};
   if (location.protocol !== 'file:') {
     try {
       const response = await fetch('catalog.json', {cache: 'no-cache'});
@@ -9,6 +10,16 @@
       data = window.ResultCatalog.fromPaths(paths, data ? data.repository : '');
     } catch { /* Retain the local manifest if the online catalog is unavailable. */ }
   }
+  if (location.protocol !== 'file:') {
+    try {
+      const response = await fetch('shot-groups.json', {cache: 'no-cache'});
+      if (!response.ok) throw new Error('Shot groups unavailable');
+      const groups = await response.json();
+      if (groups && typeof groups === 'object' && !Array.isArray(groups)) shotGroups = groups;
+    } catch { /* Unlisted shots remain unclassified; retain the offline groups. */ }
+  }
+  const groupLabels = {fast: '快炮', slow: '慢炮', unclassified: '未分类'};
+  const groupOf = shot => ['fast', 'slow'].includes(shotGroups[shot]) ? shotGroups[shot] : 'unclassified';
   const gallery = document.getElementById('gallery');
   const empty = document.getElementById('empty');
   if (!data || !data.images.length) {
@@ -19,6 +30,7 @@
   const a = document.getElementById('series-a');
   const b = document.getElementById('series-b');
   const search = document.getElementById('search');
+  const group = document.getElementById('shot-group');
   const viewer = document.getElementById('viewer');
   const params = new URLSearchParams(location.hash.slice(1));
   const seriesMap = new Map(data.series.map(s => [s.id, s]));
@@ -36,6 +48,7 @@
   if (params.get('a') === 'all' || seriesMap.has(params.get('a'))) a.value = params.get('a');
   if (params.get('b') === 'all' || seriesMap.has(params.get('b'))) b.value = params.get('b');
   search.value = params.get('shot') || '';
+  if (['all', 'fast', 'slow', 'unclassified'].includes(params.get('group'))) group.value = params.get('group');
   const stats = document.getElementById('stats');
   for (const [value, text] of [[new Set(data.images.map(i => i.shot)).size, '炮次'], [data.images.length, '张图片'], [data.series.length, '个来源']]) {
     const item = el('span'); item.append(el('strong', '', value), document.createTextNode(text)); stats.append(item);
@@ -96,7 +109,7 @@
     gallery.replaceChildren();
     const query = search.value.trim();
     const rows = [...shots.entries()].filter(([shot, images]) => {
-      if (!shot.includes(query)) return false;
+      if (!shot.includes(query) || (group.value !== 'all' && groupOf(shot) !== group.value)) return false;
       return images.some(i => a.value === 'all' || i.series === a.value || (comparing && (b.value === 'all' || i.series === b.value)));
     }).sort(([x], [y]) => x.localeCompare(y, undefined, {numeric: true}));
     for (const [shot, images] of rows) {
@@ -105,7 +118,7 @@
       const details = el('details', 'shot-card');
       details.dataset.shot = shot;
       const summary = el('summary', 'shot-summary');
-      summary.append(el('strong', '', '炮 ' + shot));
+      summary.append(el('strong', '', '炮 ' + shot + ' · ' + groupLabels[groupOf(shot)]));
       const info = el('span', 'shot-info', images.length + ' 张图片 · ' + new Set(images.map(i => i.series)).size + ' 个来源');
       const action = el('span', 'expand-label', '点击展开');
       summary.append(info, action);
@@ -129,9 +142,10 @@
     const hash = new URLSearchParams({a: a.value});
     if (b.value) hash.set('b', b.value);
     if (query) hash.set('shot', query);
+    if (group.value !== 'all') hash.set('group', group.value);
     try {history.replaceState(null, '', '#' + hash);} catch { /* Offline viewers may restrict history. */ }
   }
-  [a, b, search].forEach(node => node.addEventListener('input', render));
+  [a, b, search, group].forEach(node => node.addEventListener('input', render));
   document.getElementById('collapse-all').addEventListener('click', () => {
     gallery.querySelectorAll('details[open]').forEach(d => {d.open = false;});
   });
