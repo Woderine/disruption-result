@@ -2,6 +2,7 @@
   'use strict';
   let data = window.RESULTS_DATA;
   let shotGroups = data?.shotGroups || {};
+  let viewers = data?.viewers || [];
   if (location.protocol !== 'file:') {
     try {
       const response = await fetch('catalog.json', {cache: 'no-cache'});
@@ -17,6 +18,14 @@
       const groups = await response.json();
       if (groups && typeof groups === 'object' && !Array.isArray(groups)) shotGroups = groups;
     } catch { /* Unlisted shots remain unclassified; retain the offline groups. */ }
+  }
+  if (location.protocol !== 'file:') {
+    try {
+      const response = await fetch('viewers.json', {cache: 'no-cache'});
+      if (!response.ok) throw new Error('Viewers unavailable');
+      const entries = await response.json();
+      if (Array.isArray(entries)) viewers = entries;
+    } catch { /* Keep the viewer links from the offline manifest. */ }
   }
   const groupLabels = {fast: '快炮', slow: '慢炮', unclassified: '未分类'};
   const groupOf = shot => ['fast', 'slow'].includes(shotGroups[shot]) ? shotGroups[shot] : 'unclassified';
@@ -134,6 +143,13 @@
         if (comparing) panels.append(panel(right, shot, '右侧结果', rightPreferred));
         const note = el('p', 'shot-note', '按炮号匹配；各图保留自己的布局、坐标轴和图例。');
         content.replaceChildren(panels, note);
+        for (const item of viewers) {
+          if (!Array.isArray(item.shots) || !item.shots.some(n => String(n) === shot) || !/^viewers\/[A-Za-z0-9_-]+\/[A-Za-z0-9_-]+\/$/.test(item.path)) continue;
+          const entry = el('p', 'shot-note');
+          const link = el('a', '', '打开交互查看器：' + item.title);
+          link.href = safePath(item.path) + '#shot=' + encodeURIComponent(shot);
+          entry.append(link); content.append(entry);
+        }
       });
       gallery.append(details);
     }

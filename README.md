@@ -6,6 +6,8 @@
 
 这里共享破裂研究的公开结果图片。
 
+**交互网页：[Woderine · histaux 逐时刻注意力](https://woderine.github.io/disruption-result/viewers/Woderine/histaux_fast10_attention/)**。支持选择目标炮、移动时间、点击历史炮查看预测与波形；画廊展开对应炮号后也有直接入口。
+
 首页以炮号列出结果，默认收起，支持全部、快炮、慢炮和未分类筛选。点击炮号后加载图片，可以选择左右来源及该炮的不同图片进行比较；点击图片可放大查看。**唯一匹配索引是炮号**，不要求双方图形格式、布局、分组、指标或模型相同。
 
 当前 Woderine 图集位于 `results/Woderine/four_arms_full_time/`，保留 20 个测试炮次的四组全时间轴图；三组对照图已从公开仓库移除。这些选定炮次的可视化不代表全量测试集的统计结论。

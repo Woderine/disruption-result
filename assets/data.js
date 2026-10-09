@@ -149,5 +149,23 @@ window.RESULTS_DATA = {
     "17859": "fast",
     "18107": "fast",
     "18109": "fast"
-  }
+  },
+  "viewers": [
+    {
+      "title": "Woderine · histaux 注意力",
+      "path": "viewers/Woderine/histaux_fast10_attention/",
+      "shots": [
+        18107,
+        16845,
+        17824,
+        18109,
+        17332,
+        17835,
+        16909,
+        17285,
+        17859,
+        17825
+      ]
+    }
+  ]
 };

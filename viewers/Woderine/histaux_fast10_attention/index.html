@@ -1,0 +1,699 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>三头 histaux 逐时刻注意力</title>
+<style>
+  :root {
+    --bg: #f6f4ef;
+    --ink: #1c1b19;
+    --muted: #6d675f;
+    --line: #ddd6cb;
+    --card: #fffdf8;
+    --accent: #1f4e79;
+    --history: #9a3412;
+    --query: #8a847a;
+    --mark: #1f4e79;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font: 14px/1.45 "Segoe UI", "Source Han Sans SC", sans-serif;
+  }
+  header, main { padding: 16px 20px; }
+  header { padding-bottom: 0; }
+  h1 { font-size: 20px; font-weight: 650; margin: 0 0 4px; }
+  p.note { margin: 0; color: var(--muted); max-width: 920px; }
+  .shots { display: flex; flex-wrap: wrap; gap: 6px; margin: 14px 0; }
+  button.shot, button.nav {
+    border: 1px solid var(--line);
+    background: var(--card);
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 4px 10px;
+    cursor: pointer;
+  }
+  button.shot.active { background: var(--accent); color: white; border-color: var(--accent); }
+  .layout { display: grid; grid-template-columns: 340px 1fr; gap: 16px; align-items: start; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 8px;
+    padding: 10px 12px;
+  }
+  .toolbar { display: flex; gap: 8px; align-items: center; margin: 8px 0; flex-wrap: wrap; }
+  input[type="range"] { flex: 1; min-width: 180px; }
+  canvas.overview { width: 100%; height: 150px; display: block; cursor: crosshair; }
+  canvas.pred { width: 100%; height: 118px; display: block; cursor: crosshair; }
+  table { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+  th, td { text-align: right; padding: 3px 6px; border-bottom: 1px solid var(--line); }
+  th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; }
+  tr.rank { cursor: pointer; }
+  tr.rank.selected { background: #efe4d4; }
+  tr.rank:hover { background: #f3eee6; }
+  .rank-list { max-height: 640px; overflow: auto; }
+  .wave-head { display: flex; justify-content: space-between; gap: 12px; align-items: baseline; }
+  .wave-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  canvas.wave { width: 100%; height: 140px; display: block; }
+  .legend { color: var(--muted); font-size: 12px; }
+  .legend i { display: inline-block; width: 18px; height: 2px; margin: 0 4px 3px 8px; vertical-align: middle; }
+  .legend i.history { background: var(--history); }
+  .legend i.query { background: var(--query); }
+  .status { color: var(--muted); min-height: 1.2em; }
+  @media (max-width: 980px) {
+    .layout, .wave-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+<header>
+  <p style="margin:0 0 10px;"><a href="../../../">← 返回结果画廊</a></p>
+  <h1>三头 histaux：逐时刻注意力</h1>
+  <p class="note">每个时刻按速率头的单历史门权排序，只用更早的炮。上面三条是当前炮的预测：速率、距 CQ 的时间、起始电流，融合方式与逐时刻 top-6 那组图相同。蓝线是预测，橙线是标签。点左侧一行，右侧画出该历史炮的 IP、CCIP、ZP、RP、AXUV，并叠上当前炮。各通道横轴是同一条记录时间，起点对齐。竖线是各炮自己的 CQ 起始。</p>
+  <div class="shots" id="shots"></div>
+</header>
+<main>
+  <div class="card">
+    <canvas class="overview" id="overview" height="150"></canvas>
+    <canvas class="pred" id="pred-rate" height="118"></canvas>
+    <canvas class="pred" id="pred-time" height="118"></canvas>
+    <canvas class="pred" id="pred-start" height="118"></canvas>
+    <div class="status" id="pred-readout"></div>
+    <div class="toolbar">
+      <button class="nav" id="prev" type="button">上一毫秒</button>
+      <input id="slider" type="range" min="0" max="0" value="0" />
+      <button class="nav" id="next" type="button">下一毫秒</button>
+      <span id="when"></span>
+    </div>
+    <div class="status" id="status"></div>
+  </div>
+  <div class="layout" style="margin-top: 12px;">
+    <div class="card rank-list">
+      <table>
+        <thead><tr><th>序</th><th>历史炮</th><th>门权</th><th>炮号差</th></tr></thead>
+        <tbody id="ranks"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="wave-head">
+        <strong id="wave-title">历史炮</strong>
+        <span class="legend"><i class="history"></i>历史炮<i class="query"></i>当前炮</span>
+      </div>
+      <div class="wave-grid" id="waves"></div>
+    </div>
+  </div>
+</main>
+<script>
+const CHANNELS = ["IP", "CCIP", "ZP", "RP", "AXUV001", "AXUV016"];
+const TOP_AXIS = { l: 58, r: 48 };
+const state = {
+  data: null,
+  query: null,
+  timeIndex: 0,
+  historyShot: null,
+  waves: {},
+  waveToken: 0,
+};
+
+function ranking() {
+  return state.data.rankings[String(state.query)];
+}
+
+function scoreAt(rankIndex, timeIndex) {
+  const rank = ranking();
+  const width = rank.top_n;
+  return rank.top_score[timeIndex * width + rankIndex];
+}
+
+function defaultTime(rank) {
+  let best = 0;
+  let bestAbs = Infinity;
+  for (let i = 0; i < rank.relative_ms.length; i += 1) {
+    const delta = Math.abs(rank.relative_ms[i] + 40);
+    if (delta < bestAbs) {
+      bestAbs = delta;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function setQuery(shot) {
+  state.query = shot;
+  try { history.replaceState(null, "", "#shot=" + shot); } catch {}
+  state.historyShot = null;
+  state.timeIndex = defaultTime(ranking());
+  document.getElementById("slider").max = String(ranking().n_time - 1);
+  document.querySelectorAll("button.shot").forEach((button) => {
+    button.classList.toggle("active", Number(button.dataset.shot) === shot);
+  });
+  render();
+}
+
+function setTime(index) {
+  const n = ranking().n_time;
+  state.timeIndex = Math.max(0, Math.min(n - 1, index));
+  render();
+}
+
+function renderRanks() {
+  const rank = ranking();
+  const body = document.getElementById("ranks");
+  body.replaceChildren();
+  let visible = 0;
+  for (let i = 0; i < rank.top_n; i += 1) {
+    const shot = rank.top_shot[state.timeIndex][i];
+    const score = scoreAt(i, state.timeIndex);
+    if (shot < 0 || score == null) continue;
+    visible += 1;
+    const row = document.createElement("tr");
+    row.className = "rank" + (shot === state.historyShot ? " selected" : "");
+    row.tabIndex = 0;
+    row.setAttribute("role", "button");
+    row.setAttribute("aria-label", `历史炮 ${shot}`);
+    row.innerHTML = `<td>${i + 1}</td><td>${shot}</td><td>${Number(score).toFixed(3)}</td><td>${state.query - shot}</td>`;
+    row.addEventListener("click", () => {
+      state.historyShot = shot;
+      render();
+    });
+    body.appendChild(row);
+    if (state.historyShot == null && i === 0) state.historyShot = shot;
+  }
+  const listed = rank.top_shot[state.timeIndex].includes(state.historyShot);
+  const ms = rank.relative_ms[state.timeIndex];
+  document.getElementById("when").textContent = `${ms.toFixed(1)} ms`;
+  document.getElementById("slider").value = String(state.timeIndex);
+  const held = state.historyShot == null
+    ? ""
+    : (listed ? `已选 ${state.historyShot}，仍在这 30 条里。` : `已选 ${state.historyShot}，这一时刻不在前 30。`);
+  document.getElementById("status").textContent =
+    `当前炮 ${state.query}，候选按门权从高到低，本时刻列出 ${visible} 条。${held}`;
+}
+
+function drawOverview() {
+  const canvas = document.getElementById("overview");
+  const width = canvas.clientWidth;
+  const height = canvas.clientHeight || 150;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(width * ratio));
+  canvas.height = Math.floor(height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const rank = ranking();
+  const ms = rank.relative_ms;
+  const queryWave = state.waves[String(state.query)] || null;
+  const pad = { l: TOP_AXIS.l, r: TOP_AXIS.r, t: 16, b: 22 };
+  const innerH = height - pad.t - pad.b;
+  let yMax = 0.05;
+  const series = [];
+  for (let i = 0; i < ms.length; i += 1) {
+    const value = scoreAt(0, i);
+    const y = value == null ? 0 : value;
+    series.push(y);
+    if (y > yMax) yMax = y;
+  }
+  const ip = queryWave ? queryWave.IP : null;
+  let ipMin = Infinity;
+  let ipMax = -Infinity;
+  if (ip) {
+    ip.forEach((value) => {
+      if (value == null) return;
+      if (value < ipMin) ipMin = value;
+      if (value > ipMax) ipMax = value;
+    });
+  }
+  if (!Number.isFinite(ipMin) || ipMin === ipMax) {
+    ipMin = 0;
+    ipMax = 1;
+  }
+  const xOf = axisOf(ms, width, pad);
+  const yOf = (value) => pad.t + (1 - value / yMax) * innerH;
+  const yOfIp = (value) => pad.t + (1 - (value - ipMin) / (ipMax - ipMin)) * innerH;
+  const zeroIndex = nearestTimeIndex(ms, 0);
+  const horizonIndex = nearestTimeIndex(ms, -256);
+  markVertical(ctx, xOf(horizonIndex), pad.t, pad.t + innerH, "#b7b1a8", [2, 3]);
+  markVertical(ctx, xOf(zeroIndex), pad.t, pad.t + innerH, "#151515", [4, 3]);
+  if (rank.alarm_index >= 0) markVertical(ctx, xOf(rank.alarm_index), pad.t, pad.t + innerH, "#009e73", []);
+  drawTimeTicks(ctx, ms, xOf, pad.t + innerH, height - 3, false);
+  if (ip) {
+    ctx.strokeStyle = "#8a847a";
+    ctx.lineWidth = 1.2;
+    ctx.beginPath();
+    let moved = false;
+    const count = Math.min(ip.length, ms.length);
+    for (let index = 0; index < count; index += 1) {
+      const value = ip[index];
+      if (value == null) continue;
+      const x = xOf(index);
+      const y = yOfIp(value);
+      if (!moved) {
+        ctx.moveTo(x, y);
+        moved = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  }
+  ctx.strokeStyle = "#1f4e79";
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  series.forEach((value, index) => {
+    const x = xOf(index);
+    const y = yOf(value);
+    if (index === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+  const cursor = xOf(state.timeIndex);
+  ctx.strokeStyle = "#9a3412";
+  ctx.beginPath();
+  ctx.moveTo(cursor, pad.t);
+  ctx.lineTo(cursor, pad.t + innerH);
+  ctx.stroke();
+  ctx.font = "11px sans-serif";
+  ctx.fillStyle = "#1f4e79";
+  ctx.fillText("第1名门权", 4, 12);
+  ctx.fillStyle = "#6d675f";
+  ctx.fillText("当前炮 IP", width - 72, 12);
+  ctx.fillText(ipMax.toFixed(0), width - 44, pad.t + 10);
+  ctx.fillText(ipMin.toFixed(0), width - 44, pad.t + innerH);
+  canvas.onclick = (event) => {
+    const rect = canvas.getBoundingClientRect();
+    const x = event.clientX - rect.left;
+    let nearest = 0;
+    let best = Infinity;
+    for (let i = 0; i < ms.length; i += 1) {
+      const delta = Math.abs(xOf(i) - x);
+      if (delta < best) {
+        best = delta;
+        nearest = i;
+      }
+    }
+    setTime(nearest);
+  };
+}
+
+function nearestTimeIndex(ms, target) {
+  let best = 0;
+  let bestAbs = Infinity;
+  for (let i = 0; i < ms.length; i += 1) {
+    const delta = Math.abs(ms[i] - target);
+    if (delta < bestAbs) {
+      bestAbs = delta;
+      best = i;
+    }
+  }
+  return best;
+}
+
+function drawTimeTicks(ctx, ms, xOf, axisY, labelY, withLabels) {
+  const step = 200;
+  const first = Math.ceil(ms[0] / step) * step;
+  ctx.save();
+  ctx.fillStyle = "#6d675f";
+  ctx.font = "10px sans-serif";
+  ctx.textAlign = "center";
+  ctx.strokeStyle = "#6d675f";
+  ctx.lineWidth = 1;
+  let lastRight = -Infinity;
+  for (let tick = first; tick <= ms[ms.length - 1] + 0.1; tick += step) {
+    const index = nearestTimeIndex(ms, tick);
+    if (Math.abs(ms[index] - tick) > 80) continue;
+    const x = xOf(index);
+    ctx.beginPath();
+    ctx.moveTo(x, axisY);
+    ctx.lineTo(x, axisY + 4);
+    ctx.stroke();
+    if (!withLabels) continue;
+    const text = tick === 0 ? "0" : String(tick);
+    const half = ctx.measureText(text).width / 2 + 3;
+    if (x - half < lastRight) continue;
+    ctx.fillText(text, x, labelY);
+    lastRight = x + half;
+  }
+  ctx.restore();
+}
+
+function axisOf(ms, width, pad) {
+  const innerW = width - pad.l - pad.r;
+  const xOf = (index) => pad.l + (ms[index] - ms[0]) / (ms[ms.length - 1] - ms[0]) * innerW;
+  return xOf;
+}
+
+function strokeSeries(ctx, xOf, yOf, values, accept) {
+  ctx.beginPath();
+  let moved = false;
+  for (let i = 0; i < values.length; i += 1) {
+    const value = values[i];
+    if (!accept(i, value) || value == null || !Number.isFinite(value)) {
+      moved = false;
+      continue;
+    }
+    const x = xOf(i);
+    const y = yOf(value);
+    if (!moved) {
+      ctx.moveTo(x, y);
+      moved = true;
+    } else ctx.lineTo(x, y);
+  }
+  ctx.stroke();
+}
+
+function markVertical(ctx, x, top, bottom, color, dash) {
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash(dash || []);
+  ctx.beginPath();
+  ctx.moveTo(x, top);
+  ctx.lineTo(x, bottom);
+  ctx.stroke();
+  ctx.restore();
+}
+
+function symlog(value) {
+  const lin = 1000;
+  const mag = Math.abs(value);
+  const sign = value < 0 ? -1 : 1;
+  if (mag <= lin) return sign * (mag / lin);
+  return sign * (1 + Math.log10(mag / lin));
+}
+
+function prepareCanvas(canvas, height) {
+  const width = canvas.clientWidth;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(width * ratio));
+  canvas.height = Math.floor(height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  return { ctx, width, height };
+}
+
+function drawPredictions() {
+  const rank = ranking();
+  const ms = rank.relative_ms;
+  const readout = document.getElementById("pred-readout");
+  const canvases = ["pred-rate", "pred-time", "pred-start"].map((id) => document.getElementById(id));
+  if (!rank.pred_rate) {
+    readout.textContent = "三条预测还没有载入。";
+    return;
+  }
+  const pad = { l: TOP_AXIS.l, r: TOP_AXIS.r, t: 16, b: 22 };
+  const zeroIndex = nearestTimeIndex(ms, 0);
+  const horizonIndex = nearestTimeIndex(ms, -256);
+  const alarmIndex = rank.alarm_index;
+  const trueTime = ms.map((value) => Math.max(-value, 0));
+
+  function frame(canvas, withLabels) {
+    const view = prepareCanvas(canvas, 118);
+    const xOf = axisOf(ms, view.width, pad);
+    const top = pad.t;
+    const bottom = view.height - pad.b;
+    markVertical(view.ctx, xOf(horizonIndex), top, bottom, "#b7b1a8", [2, 3]);
+    markVertical(view.ctx, xOf(zeroIndex), top, bottom, "#151515", [4, 3]);
+    if (alarmIndex >= 0) markVertical(view.ctx, xOf(alarmIndex), top, bottom, "#009e73", []);
+    markVertical(view.ctx, xOf(state.timeIndex), top, bottom, "#9a3412", []);
+    drawTimeTicks(view.ctx, ms, xOf, bottom, view.height - 3, withLabels);
+    canvas.onclick = (event) => {
+      const rect = canvas.getBoundingClientRect();
+      const x = event.clientX - rect.left;
+      let nearest = 0;
+      let best = Infinity;
+      for (let i = 0; i < ms.length; i += 1) {
+        const delta = Math.abs(xOf(i) - x);
+        if (delta < best) {
+          best = delta;
+          nearest = i;
+        }
+      }
+      setTime(nearest);
+    };
+    return { ...view, xOf, top, bottom };
+  }
+
+  const rate = frame(canvases[0], false);
+  let ratePeak = 1e5;
+  rank.pred_rate.forEach((value, index) => {
+    if (rank.rate_mask[index] && value != null && value > ratePeak) ratePeak = value;
+  });
+  rank.true_rate_profile.forEach((value, index) => {
+    if (rank.rate_mask[index] && value != null && value > ratePeak) ratePeak = value;
+  });
+  const rateTop = symlog(ratePeak * 1.08);
+  const yRate = (value) => rate.top + (1 - symlog(Math.max(value, 0)) / rateTop) * (rate.bottom - rate.top);
+  rate.ctx.strokeStyle = "#9c2f2f";
+  rate.ctx.setLineDash([2, 3]);
+  rate.ctx.beginPath();
+  rate.ctx.moveTo(pad.l, yRate(1e5));
+  rate.ctx.lineTo(rate.width - pad.r, yRate(1e5));
+  rate.ctx.stroke();
+  rate.ctx.setLineDash([5, 4]);
+  rate.ctx.strokeStyle = "#c2410c";
+  rate.ctx.lineWidth = 1.2;
+  strokeSeries(rate.ctx, rate.xOf, yRate, rank.true_rate_profile, (index) => rank.rate_mask[index]);
+  rate.ctx.setLineDash([]);
+  rate.ctx.strokeStyle = "#1f4e79";
+  rate.ctx.lineWidth = 1.5;
+  strokeSeries(rate.ctx, rate.xOf, yRate, rank.pred_rate, (index) => rank.rate_mask[index]);
+  rate.ctx.fillStyle = "#1c1b19";
+  rate.ctx.font = "12px sans-serif";
+  rate.ctx.fillText("速率", pad.l, 12);
+  rate.ctx.fillStyle = "#6d675f";
+  rate.ctx.font = "11px sans-serif";
+  [0, 1e3, 1e4, 1e5, 1e6].forEach((tick) => {
+    if (symlog(tick) > rateTop) return;
+    rate.ctx.fillText(tick >= 1000 ? `${tick.toExponential(0)}` : "0", 2, yRate(tick) + 3);
+  });
+
+  const time = frame(canvases[1], false);
+  let timeMax = 266;
+  rank.pred_time_ms.forEach((value) => {
+    if (value != null && value > timeMax) timeMax = value;
+  });
+  trueTime.forEach((value) => {
+    if (value > timeMax) timeMax = value;
+  });
+  timeMax *= 1.05;
+  const yTime = (value) => time.top + (1 - (value + 5) / (timeMax + 5)) * (time.bottom - time.top);
+  time.ctx.setLineDash([5, 4]);
+  time.ctx.strokeStyle = "#c2410c";
+  time.ctx.lineWidth = 1.2;
+  strokeSeries(time.ctx, time.xOf, yTime, trueTime, () => true);
+  time.ctx.setLineDash([2, 3]);
+  time.ctx.strokeStyle = "#7aa6c9";
+  time.ctx.lineWidth = 1.1;
+  strokeSeries(time.ctx, time.xOf, yTime, rank.pred_time_ms, (index) => !rank.time_mask[index]);
+  time.ctx.setLineDash([]);
+  time.ctx.strokeStyle = "#1f4e79";
+  time.ctx.lineWidth = 1.5;
+  strokeSeries(time.ctx, time.xOf, yTime, rank.pred_time_ms, (index) => rank.time_mask[index]);
+  time.ctx.fillStyle = "#1c1b19";
+  time.ctx.font = "12px sans-serif";
+  time.ctx.fillText("距 CQ 时间 (ms)", pad.l, 12);
+  time.ctx.fillStyle = "#6d675f";
+  time.ctx.font = "11px sans-serif";
+  time.ctx.fillText(timeMax.toFixed(0), 2, time.top + 10);
+  time.ctx.fillText("0", 2, yTime(0) + 3);
+
+  const start = frame(canvases[2], true);
+  const yStart = (value) => start.top + (1 - (value + 0.05) / 1.17) * (start.bottom - start.top);
+  start.ctx.setLineDash([5, 4]);
+  start.ctx.strokeStyle = "#c2410c";
+  start.ctx.lineWidth = 1.2;
+  start.ctx.beginPath();
+  start.ctx.moveTo(pad.l, yStart(rank.true_start_current));
+  start.ctx.lineTo(start.width - pad.r, yStart(rank.true_start_current));
+  start.ctx.stroke();
+  start.ctx.setLineDash([]);
+  start.ctx.strokeStyle = "#1f4e79";
+  start.ctx.lineWidth = 1.5;
+  strokeSeries(start.ctx, start.xOf, yStart, rank.pred_start_current, (index) => rank.start_current_mask[index]);
+  start.ctx.fillStyle = "#1c1b19";
+  start.ctx.font = "12px sans-serif";
+  start.ctx.fillText("起始电流", pad.l, 12);
+  start.ctx.fillStyle = "#6d675f";
+  start.ctx.font = "11px sans-serif";
+  start.ctx.fillText("1", 2, yStart(1) + 3);
+  start.ctx.fillText("0", 2, yStart(0) + 3);
+
+  const i = state.timeIndex;
+  const rateText = rank.rate_mask[i] ? Number(rank.pred_rate[i]).toExponential(2) : "窗外";
+  const timeText = Number(rank.pred_time_ms[i]).toFixed(1);
+  const startText = rank.start_current_mask[i] ? Number(rank.pred_start_current[i]).toFixed(3) : "窗外";
+  const alarmText = alarmIndex >= 0 ? `报警 ${ms[alarmIndex].toFixed(1)} ms` : "未报警";
+  readout.textContent =
+    `速率 ${rateText}（标签 ${rank.rate_mask[i] ? Number(rank.true_rate_profile[i]).toExponential(2) : "窗外"}），` +
+    `时间 ${timeText} ms（真实剩余 ${trueTime[i].toFixed(1)} ms，${rank.time_mask[i] ? "窗内" : "窗外"}），` +
+    `起始电流 ${startText}（真实 ${Number(rank.true_start_current).toFixed(3)}）。${alarmText}。绿线是持续报警，灰点线是 256 ms。`;
+}
+
+async function ensureWave(shot) {
+  if (shot == null) return null;
+  const key = String(shot);
+  if (Object.prototype.hasOwnProperty.call(state.waves, key)) return state.waves[key];
+  const response = await fetch(`waves/${key}.json`);
+  state.waves[key] = response.ok ? await response.json() : null;
+  return state.waves[key];
+}
+
+function drawWave(canvas, channel, queryWave, historyWave) {
+  const width = canvas.clientWidth;
+  const height = 140;
+  const ratio = window.devicePixelRatio || 1;
+  canvas.width = Math.max(1, Math.floor(width * ratio));
+  canvas.height = Math.floor(height * ratio);
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(ratio, 0, 0, ratio, 0, 0);
+  ctx.clearRect(0, 0, width, height);
+  const pad = { l: 46, r: 8, t: 16, b: 18 };
+  ctx.fillStyle = "#1c1b19";
+  ctx.font = "12px sans-serif";
+  ctx.fillText(channel, pad.l, 12);
+  if (!historyWave) {
+    ctx.fillStyle = "#6d675f";
+    ctx.fillText("点左侧一条历史炮", pad.l, 40);
+    return;
+  }
+  const traces = [
+    { wave: historyWave, color: "#9a3412", width: 1.6 },
+    { wave: queryWave, color: "#8a847a", width: 1.1 },
+  ];
+  let yMin = Infinity;
+  let yMax = -Infinity;
+  traces.forEach((trace) => {
+    if (!trace.wave) return;
+    trace.wave[channel].forEach((value) => {
+      if (value == null) return;
+      if (value < yMin) yMin = value;
+      if (value > yMax) yMax = value;
+    });
+  });
+  if (!Number.isFinite(yMin) || yMin === yMax) {
+    yMin -= 1;
+    yMax += 1;
+  }
+  const span = yMax - yMin;
+  yMin -= span * 0.08;
+  yMax += span * 0.08;
+  const sampleMs = (index) => (0.0005 + index * 0.001) * 1000;
+  let count = 0;
+  traces.forEach((trace) => {
+    if (!trace.wave) return;
+    count = Math.max(count, trace.wave[channel].length);
+  });
+  const x0 = sampleMs(0);
+  const x1 = sampleMs(Math.max(count - 1, 1));
+  const xOf = (ms) => pad.l + (ms - x0) / (x1 - x0) * (width - pad.l - pad.r);
+  const yOf = (value) => pad.t + (1 - (value - yMin) / (yMax - yMin)) * (height - pad.t - pad.b);
+  traces.forEach((trace) => {
+    if (!trace.wave || trace.wave.cq_start_s == null) return;
+    const x = xOf(trace.wave.cq_start_s * 1000);
+    ctx.strokeStyle = trace.color;
+    ctx.globalAlpha = 0.45;
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(x, pad.t);
+    ctx.lineTo(x, height - pad.b);
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  });
+  traces.forEach((trace) => {
+    if (!trace.wave) return;
+    const values = trace.wave[channel];
+    ctx.strokeStyle = trace.color;
+    ctx.lineWidth = trace.width;
+    ctx.beginPath();
+    let moved = false;
+    for (let i = 0; i < values.length; i += 1) {
+      const value = values[i];
+      if (value == null) continue;
+      const x = xOf(sampleMs(i));
+      const y = yOf(value);
+      if (!moved) {
+        ctx.moveTo(x, y);
+        moved = true;
+      } else ctx.lineTo(x, y);
+    }
+    ctx.stroke();
+  });
+  ctx.fillStyle = "#6d675f";
+  ctx.font = "11px sans-serif";
+  ctx.fillText(yMax.toFixed(2), 2, pad.t + 10);
+  ctx.fillText(yMin.toFixed(2), 2, height - pad.b);
+}
+
+function renderWaves(queryWave, historyWave) {
+  document.getElementById("wave-title").textContent = state.historyShot == null
+    ? "历史炮"
+    : `历史炮 ${state.historyShot}`;
+  const grid = document.getElementById("waves");
+  if (grid.childElementCount !== CHANNELS.length) {
+    grid.replaceChildren();
+    CHANNELS.forEach((channel) => {
+      const canvas = document.createElement("canvas");
+      canvas.className = "wave";
+      canvas.height = 140;
+      canvas.dataset.channel = channel;
+      grid.appendChild(canvas);
+    });
+  }
+  grid.querySelectorAll("canvas").forEach((canvas) => drawWave(canvas, canvas.dataset.channel, queryWave, historyWave));
+}
+
+function render() {
+  if (state.historyShot == null) {
+    const first = ranking().top_shot[state.timeIndex].find((shot) => shot > 0);
+    state.historyShot = first || null;
+  }
+  renderRanks();
+  drawOverview();
+  drawPredictions();
+  const token = state.waveToken + 1;
+  state.waveToken = token;
+  const historyShot = state.historyShot;
+  const queryShot = state.query;
+  Promise.all([ensureWave(queryShot), ensureWave(historyShot)]).then(([queryWave, historyWave]) => {
+    if (token !== state.waveToken) return;
+    drawOverview();
+    renderWaves(queryWave, historyWave);
+  });
+}
+
+async function boot() {
+  const response = await fetch("data.json");
+  state.data = await response.json();
+  const shots = document.getElementById("shots");
+  state.data.queries.forEach((shot) => {
+    const button = document.createElement("button");
+    button.className = "shot";
+    button.type = "button";
+    button.dataset.shot = String(shot);
+    button.textContent = String(shot);
+    button.addEventListener("click", () => setQuery(shot));
+    shots.appendChild(button);
+  });
+  document.getElementById("slider").addEventListener("input", (event) => {
+    setTime(Number(event.target.value));
+  });
+  document.getElementById("prev").addEventListener("click", () => setTime(state.timeIndex - 1));
+  document.getElementById("next").addEventListener("click", () => setTime(state.timeIndex + 1));
+  window.addEventListener("keydown", (event) => {
+    if (event.key === "ArrowLeft") setTime(state.timeIndex - (event.shiftKey ? 10 : 1));
+    if (event.key === "ArrowRight") setTime(state.timeIndex + (event.shiftKey ? 10 : 1));
+  });
+  window.addEventListener("resize", render);
+  const requestedShot = Number(new URLSearchParams(location.hash.slice(1)).get("shot"));
+  setQuery(state.data.queries.includes(requestedShot) ? requestedShot : state.data.queries[0]);
+}
+
+boot().catch((error) => {
+  document.getElementById("status").textContent = `数据没有载入：${error}`;
+});
+</script>
+</body>
+</html>

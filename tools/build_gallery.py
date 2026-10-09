@@ -49,11 +49,34 @@ def build(output=None):
     shot_groups = json.loads((ROOT / "shot-groups.json").read_text(encoding="utf-8"))
     if not isinstance(shot_groups, dict) or any(not re.fullmatch(r"[1-9]\d*", shot) or group not in {"fast", "slow"} for shot, group in shot_groups.items()):
         raise ValueError("Shot groups must map normalized shot numbers to fast or slow")
+    viewers = json.loads((ROOT / "viewers.json").read_text(encoding="utf-8"))
+    viewer_assets = []
+    if not isinstance(viewers, list):
+        raise ValueError("Viewer manifest must be a list")
+    for viewer in viewers:
+        if not isinstance(viewer.get("title"), str) or not re.fullmatch(r"viewers/[A-Za-z0-9_-]+/[A-Za-z0-9_-]+/", viewer.get("path", "")):
+            raise ValueError("Viewer paths must use author/experiment directories")
+        directory = ROOT / viewer["path"]
+        if not directory.resolve().is_relative_to((ROOT / "viewers").resolve()):
+            raise ValueError("Viewer outside the prepared export")
+        viewer_data = json.loads((directory / "data.json").read_text(encoding="utf-8"))
+        if viewer.get("shots") != viewer_data.get("queries") or not (directory / "index.html").is_file():
+            raise ValueError("Viewer manifest must match its query shots")
+        for asset in sorted(directory.rglob("*")):
+            if asset.is_symlink():
+                raise ValueError(f"Symbolic links are not allowed: {asset}")
+            if not asset.is_file():
+                continue
+            name = asset.relative_to(directory).as_posix()
+            if name not in {"index.html", "README.md", "data.json"} and not re.fullmatch(r"waves/\d+\.json", name):
+                raise ValueError(f"Unsupported viewer file: {asset}")
+            viewer_assets.append(asset.relative_to(ROOT).as_posix())
     data = {
         "repository": os.environ.get("GITHUB_REPOSITORY", "Woderine/disruption-result"),
         "series": sorted(series.values(), key=lambda s: s["id"]),
         "images": images,
         "shotGroups": shot_groups,
+        "viewers": viewers,
     }
     (ROOT / "assets").mkdir(exist_ok=True)
     (ROOT / "assets" / "data.js").write_text("window.RESULTS_DATA = " + json.dumps(data, ensure_ascii=False, indent=2) + ";\n", encoding="utf-8")
@@ -69,7 +92,7 @@ def build(output=None):
         if destination == ROOT or destination.is_relative_to(results) or not destination.is_relative_to(ROOT):
             raise ValueError("Output must be a separate directory inside the public repository")
         destination.mkdir(parents=True, exist_ok=True)
-        page_files = ("index.html", "README.md", "BROWSE.md", "UPLOAD_RULES.md", "COLLABORATION.md", "shot-groups.json")
+        page_files = ("index.html", "README.md", "BROWSE.md", "UPLOAD_RULES.md", "COLLABORATION.md", "shot-groups.json", "viewers.json")
         asset_files = ("app.js", "catalog-model.js", "style.css", "data.js")
         for name in page_files:
             shutil.copyfile(ROOT / name, destination / name)
@@ -81,7 +104,11 @@ def build(output=None):
             target = destination / image["path"]
             target.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(ROOT / image["path"], target)
-        allowed = set(page_files) | {"catalog.json"} | {f"assets/{n}" for n in asset_files} | {i["path"] for i in images}
+        for asset in viewer_assets:
+            target = destination / asset
+            target.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(ROOT / asset, target)
+        allowed = set(page_files) | {"catalog.json"} | {f"assets/{n}" for n in asset_files} | {i["path"] for i in images} | set(viewer_assets)
         for old in destination.rglob("*"):
             if old.is_file() and old.relative_to(destination).as_posix() not in allowed:
                 old.unlink()
