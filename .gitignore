@@ -1,0 +1,13 @@
+_site/
+__pycache__/
+.DS_Store
+Thumbs.db
+*.npz
+*.h5
+*.pth
+*.pt
+*.log
+*.zip
+*.token
+.env
+.env.*

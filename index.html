@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Disruption research shared results: browse and compare CQ prediction plots by shot.">
+  <title>Disruption · 共享结果</title>
+  <link rel="stylesheet" href="assets/style.css">
+  <script src="assets/data.js" defer></script>
+  <script src="assets/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <a class="brand" href="./">disruption<span> / results</span></a>
+    <a id="repo-link" class="text-link" href="README.md">共享与更新说明 ↗</a>
+  </header>
+  <main>
+    <section class="intro">
+      <p class="eyebrow">DISRUPTION RESEARCH / SHARED RESULTS</p>
+      <h1>一起查看，逐炮比较。</h1>
+      <p class="description">CQ 预测结果图集。按快慢组、炮号和图集浏览，或选择两组结果并排查看。</p>
+      <div class="stats" id="stats" aria-live="polite"></div>
+    </section>
+    <section class="controls" aria-label="结果筛选">
+      <fieldset class="segmented"><legend>炮次分组</legend>
+        <label><input type="radio" name="group" value="all" checked><span>全部</span></label>
+        <label><input type="radio" name="group" value="fast"><span>快速 CQ</span></label>
+        <label><input type="radio" name="group" value="slow"><span>慢速 CQ</span></label>
+        <label id="other-group" hidden><input type="radio" name="group" value="other"><span>其他结果</span></label>
+      </fieldset>
+      <label class="field search">搜索炮号<input id="search" type="search" placeholder="例如 16845" inputmode="numeric"></label>
+      <label class="field">主图集<select id="series-a"></select></label>
+      <label class="field">并排比较<select id="series-b"><option value="">关闭比较</option></select></label>
+    </section>
+    <div class="results-heading"><h2>结果图集</h2><p id="result-count" aria-live="polite"></p></div>
+    <div id="gallery" class="gallery"></div>
+    <p id="empty" class="empty" hidden>没有匹配结果。请调整炮号或图集筛选。</p>
+    <noscript>请启用 JavaScript，或打开 <a href="BROWSE.md">图片索引</a> 查看结果。</noscript>
+  </main>
+  <footer><span>disruption / 公开研究结果</span><span>点击图片放大 · 可通过链接分享当前筛选</span></footer>
+  <dialog id="viewer" aria-labelledby="viewer-title">
+    <div class="viewer-bar"><strong id="viewer-title"></strong><div><a id="original" target="_blank" rel="noopener">打开原图 ↗</a><button id="close-viewer" type="button" aria-label="关闭放大图片">关闭 ✕</button></div></div>
+    <div class="viewer-scroll"><img id="viewer-image" alt=""></div>
+  </dialog>
+</body>
+</html>

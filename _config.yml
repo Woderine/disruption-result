@@ -1,0 +1,6 @@
+title: disruption
+markdown: kramdown
+exclude:
+  - tools
+  - _site
+  - __pycache__
